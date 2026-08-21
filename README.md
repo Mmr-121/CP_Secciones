@@ -8,19 +8,6 @@ A partir de los microdatos oficiales del **Instituto Nacional de Estadística (I
 
 ---
 
-## Tabla de Contenidos
-
-1. [Características Principales](#-características-principales)
-2. [Estructura del Proyecto](#-estructura-del-proyecto)
-3. [Requisitos y Dependencias](#-requisitos-y-dependencias)
-4. [Estructura de Datos de Entrada](#-estructura-de-datos-de-entrada)
-5. [Flujo de Trabajo y Scripts](#-flujo-de-trabajo-y-scripts)
-6. [Metodología de Cálculo](#-metodología-de-cálculo)
-7. [Guía de Uso](#-guía-de-uso)
-8. [Archivos Generados](#-archivos-generados)
-
----
-
 ## Estructura del Proyecto
 
 ```text
@@ -50,20 +37,22 @@ Para ejecutar el pipeline correctamente, asegúrate de situar en la raíz del pr
 2. Excel de Renta del INE (30833.xlsx o similar): https://www.ine.es/dynt3/inebase/es/index.htm?padre=12385&capsel=5685
 
 3. Plantilla Excel Profesional (Plantilla_Profesional_IPJ_Alicante.xlsx).
+    
+---
+## Instrucciones de Uso
+Coloca los ficheros de datos del INE (caj_esp_* y 30833.xlsx) en el directorio raíz.
+
+Abre una terminal en el directorio del proyecto.
+
+Ejecuta el orquestador principal: python actualizar_todo.py
+
+Revisa los logs en la terminal. Al finalizar, la plantilla Excel se habrá actualizado automáticamente.
 
 ---
+## Archivos Generados
 
-## Flujo de Trabajo y Pipeline
+Relacion_Secciones_CP.xlsx: Tabla de equivalencia entre Secciones Censales (10 dígitos), Municipios y Códigos Postales.
 
-El script orquestador actualizar_todo.py gestiona la ejecución secuencial del pipeline:
+Informe_Renta_Urbanizacion_por_CP.xlsx: Informe de trabajo detallado con métricas numéricas agregadas por CP.
 
-graph TD
-    A[actualizar_todo.py] --> B[1. clean.py]
-    A --> C[2. generar_relacion_secciones_cp.py]
-    A --> D[3. Renta_segun_CP.py]
-    A --> E[4. actualizar_ranking_plantilla.py]
-    
-    B -->|Elimina outputs antiguos| B1[Limpia workspace]
-    C -->|Mapea CUSEC ➔ CP| C1[Relacion_Secciones_CP.xlsx]
-    D -->|Pondera Renta y Urba| D1[Informe_Renta_Urbanizacion_por_CP.xlsx]
-    E -->|Vuelca datos| E1[Plantilla_Profesional_IPJ_Alicante.xlsx]
+Plantilla_Profesional_IPJ_Alicante.xlsx: Documento final listo para presentación y análisis estratégico.
