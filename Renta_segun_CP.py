@@ -1,31 +1,11 @@
 """
-generar_informe_renta_cp.py
+Renta_segun_CP.py / generar_informe_renta_cp.py
 
-----------------------------------------
 Genera un Excel con, para cada Código Postal de la provincia de Alicante:
-  - Renta neta media ponderada por persona
-  - Renta bruta media ponderada por persona
+  - Renta neta media por HOGAR (actual y evolución %)
+  - Renta bruta media por HOGAR (actual y evolución %)
   - % de tramos de tipo "urbanización" (URB/URBAT)
-  - Nº de tramos totales y nº de secciones censales (CUSEC) que aportan renta
-  - % de cobertura de renta (cuántos tramos del CP tienen dato de renta real,
-    frente a secreto estadístico)
-----------------------------------------
-
-El INE publica la renta a nivel de SECCIÓN CENSAL (CUSEC), no de Código Postal.
-Una misma sección puede repartir sus tramos de calle entre 2+ CP (muy habitual
-en zonas urbanas densas).
-
-La renta de cada sección se reparte proporcionalmente: si la sección X
-tiene 30 tramos en el CP 03008 y 20 en el 03138, su renta pondera un 60% en la
-media del 03008 y un 40% en la del 03138 (peso = nº de tramos, no el 100/0).
-
-Las secciones con secreto estadístico (renta = "." o vacío en el Excel del
-INE) se EXCLUYEN tanto del numerador como del denominador de la media
-ponderada, para que no infrainflen (deflacten) el resultado.
-
-El % de urbanizaciones NO necesita este reparto: cada tramo de calle ya tiene
-un único CP inequívoco en el propio fichero TRAM, la ambigüedad solo existe a
-nivel de sección/renta.
+  - % de cobertura de renta y fiabilidad
 """
 
 from pathlib import Path
@@ -42,23 +22,11 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 def _localizar_carpeta_datos() -> Path:
-    """Busca la carpeta de la edición del INE (ej. caj_esp_072026) sin
-    depender de su nombre exacto, ya que cambia con cada edición trimestral.
-    Acepta tanto la carpeta "caj_esp_*" en la raíz como su variante anidada
-    (caj_esp_XXXXXX/caj_esp_XXXXXX, tal y como la distribuye el INE en el zip).
-    Si hay más de una edición presente, avisa en vez de adivinar en silencio."""
     candidatas = sorted(BASE_DIR.glob("caj_esp_*"))
     candidatas = [c for c in candidatas if c.is_dir()]
     if not candidatas:
         raise FileNotFoundError(
-            f"No se encontró ninguna carpeta 'caj_esp_*' con los datos del INE dentro de {BASE_DIR}. "
-            "Descomprime aquí el zip de la última edición (VIAS/TRAM) antes de ejecutar."
-        )
-    if len(candidatas) > 1:
-        print(
-            f"[AVISO] Hay más de una carpeta 'caj_esp_*' en {BASE_DIR}: "
-            f"{[c.name for c in candidatas]}. Se usará '{candidatas[-1].name}' (la última alfabéticamente). "
-            "Si no es la edición correcta, borra o renombra las carpetas antiguas antes de ejecutar."
+            f"No se encontró ninguna carpeta 'caj_esp_*' en {BASE_DIR}."
         )
     carpeta = candidatas[-1]
     anidada = carpeta / carpeta.name
@@ -66,21 +34,17 @@ def _localizar_carpeta_datos() -> Path:
 
 
 FOLDER_DATOS = _localizar_carpeta_datos()
-
 PROVINCIA = "03"  # Alicante
 TIPOS_VIA_URBANIZACION = {"URB", "URBAT"}
 
 SALIDA = BASE_DIR / "Informe_Renta_Urbanizacion_por_CP.xlsx"
-SALIDA_RELACION = BASE_DIR / "Relacion_Secciones_CP.xlsx"
 
 
 def encontrar_fichero(patron: str) -> Path:
     candidatos = sorted(glob.glob(str(FOLDER_DATOS / f"{patron}*")))
     candidatos = [c for c in candidatos if not c.endswith(".xlsx")]
     if not candidatos:
-        raise FileNotFoundError(
-            f"No se encontró ningún fichero que empiece por '{patron}' en {FOLDER_DATOS}"
-        )
+        raise FileNotFoundError(f"No se encontró fichero '{patron}' en {FOLDER_DATOS}")
     return Path(candidatos[0])
 
 
@@ -92,12 +56,6 @@ def encontrar_excel_renta() -> Path:
     ]
     if not candidatos:
         raise FileNotFoundError(f"No se encontró el Excel de renta del INE en {BASE_DIR}")
-    if len(candidatos) > 1:
-        print(
-            f"[AVISO] Hay más de un .xlsx candidato a Excel de renta en {BASE_DIR}: "
-            f"{[Path(c).name for c in candidatos]}. Se usará '{Path(candidatos[0]).name}'. "
-            "Si no es el correcto, borra los ficheros de renta de años anteriores."
-        )
     return Path(candidatos[0])
 
 
@@ -106,11 +64,6 @@ def main():
     fichero_tram = encontrar_fichero("TRAM")
     fichero_renta = encontrar_excel_renta()
 
-    print(f"VIAS : {fichero_vias.name}")
-    print(f"TRAM : {fichero_tram.name}")
-    print(f"Renta: {fichero_renta.name}")
-
-    # VIAS: tipo de vía por (municipio, codigo_via), para detectar urbanizaciones (URB / URBAT)
     print("1. Leyendo VIAS para clasificar tipos de vía...")
     tipo_via_dict = {}
     with open(fichero_vias, "r", encoding="latin1") as f:
@@ -121,7 +74,6 @@ def main():
             vcode = linea[5:10]
             idx = linea.find("20260630")
             if idx == -1:
-                # Fallback por si la fecha de vigencia cambia en próximas descargas
                 m = re.search(r"\d{8}", linea)
                 if not m:
                     continue
@@ -129,15 +81,11 @@ def main():
             tipo = linea[idx + 14: idx + 19].strip()
             tipo_via_dict[(mun, vcode)] = tipo
 
-    # TRAM: por cada tramo sabemos: CUSEC, CP y si su  vía es de tipo urbanización. Con eso construimos:
-    #   - cusec_cp_tramos[cusec][cp] = nº de tramos (para ponderar renta)
-    #   - total_tramos_cp[cp], urba_tramos_cp[cp] (para % urbanización)
-
-    print("2. Leyendo TRAM (puede tardar unos minutos, es un fichero grande)...")
+    print("2. Leyendo TRAM...")
     cusec_cp_tramos = defaultdict(lambda: defaultdict(int))
     total_tramos_cp = defaultdict(int)
     urba_tramos_cp = defaultdict(int)
-    mun_tramos_cp = defaultdict(lambda: defaultdict(int))  # cp -> {codigo_municipio: nº tramos}
+    mun_tramos_cp = defaultdict(lambda: defaultdict(int))
 
     with open(fichero_tram, "r", encoding="latin1") as f:
         for linea in f:
@@ -155,12 +103,10 @@ def main():
             total_tramos_cp[cpos] += 1
             mun_tramos_cp[cpos][mun] += 1
 
-            tipo = tipo_via_dict.get((mun, vcode))
-            if tipo in TIPOS_VIA_URBANIZACION:
+            if tipo_via_dict.get((mun, vcode)) in TIPOS_VIA_URBANIZACION:
                 urba_tramos_cp[cpos] += 1
 
-    # Excel de renta del INE -> renta neta/bruta media por CUSEC
-    print("3. Leyendo Excel de renta del INE...")
+    print("3. Leyendo Excel de renta por HOGAR del INE...")
     df_bruto = pd.read_excel(fichero_renta, header=None)
 
     fila_cabecera = -1
@@ -169,119 +115,134 @@ def main():
             fila_cabecera = i
             break
     if fila_cabecera == -1:
-        raise ValueError("No se encontró la fila de cabecera con 'renta neta' en el Excel del INE.")
+        raise ValueError("No se encontró la cabecera de renta en el Excel del INE.")
 
-    fila_hdr = df_bruto.iloc[fila_cabecera].astype(str).str.lower()
-    col_neta_idx = fila_hdr.str.contains("renta neta media por persona").idxmax()
-    col_bruta_idx = fila_hdr.str.contains("renta bruta media por persona").idxmax()
+    # NUEVO: Propagamos los nombres de las celdas combinadas hacia la derecha (forward fill)
+    row_indicadores = df_bruto.iloc[fila_cabecera].ffill().astype(str).str.lower()
+    
+    # Identificar las posiciones de Renta Neta y Bruta por Hogar (devuelve todas las columnas, una por año)
+    cols_neta = [i for i, ind in enumerate(row_indicadores) if "renta neta media por hogar" in ind or "renta neta por hogar" in ind]
+    cols_bruta = [i for i, ind in enumerate(row_indicadores) if "renta bruta media por hogar" in ind or "renta bruta por hogar" in ind]
 
-    df_renta = df_bruto.iloc[fila_cabecera + 2:, [0, col_neta_idx, col_bruta_idx]].copy()
-    df_renta.columns = ["Territorio", "Renta_Neta", "Renta_Bruta"]
+    if not cols_neta or not cols_bruta:
+        cols_neta = [i for i, ind in enumerate(row_indicadores) if "renta neta" in ind]
+        cols_bruta = [i for i, ind in enumerate(row_indicadores) if "renta bruta" in ind]
+
+    # Asignamos la primera columna encontrada como el año actual y la segunda como el año anterior
+    col_neta_act = cols_neta[0]
+    col_bruta_act = cols_bruta[0]
+    
+    col_neta_ant = cols_neta[1] if len(cols_neta) > 1 else None
+    col_bruta_ant = cols_bruta[1] if len(cols_bruta) > 1 else None
+
+    indices = [0, col_neta_act, col_bruta_act]
+    if col_neta_ant: indices.append(col_neta_ant)
+    if col_bruta_ant: indices.append(col_bruta_ant)
+
+    df_renta = df_bruto.iloc[fila_cabecera + 2:, indices].copy()
+    
+    col_names = ["Territorio", "Renta_Neta_Hogar", "Renta_Bruta_Hogar"]
+    if col_neta_ant: col_names.append("Renta_Neta_Hogar_Ant")
+    if col_bruta_ant: col_names.append("Renta_Bruta_Hogar_Ant")
+    df_renta.columns = col_names
+
     df_renta["CUSEC"] = df_renta["Territorio"].astype(str).str.extract(r"^(\d{10})")
     df_renta = df_renta.dropna(subset=["CUSEC"]).copy()
-    df_renta["Renta_Neta"] = pd.to_numeric(df_renta["Renta_Neta"], errors="coerce")
-    df_renta["Renta_Bruta"] = pd.to_numeric(df_renta["Renta_Bruta"], errors="coerce")
 
-    renta_por_cusec = df_renta.set_index("CUSEC")[["Renta_Neta", "Renta_Bruta"]].to_dict("index")
+    for col in df_renta.columns:
+        if col not in ["Territorio", "CUSEC"]:
+            df_renta[col] = pd.to_numeric(df_renta[col], errors="coerce")
 
-    # Nombre de municipio por código INE de municipio (5 dígitos), a partir de la
-    # columna "Territorio" del propio Excel de renta (ej. "0300101001 Alcoi/Alcoy sección 01001")
-    print("3b. Extrayendo nombres de municipio...")
+    renta_por_cusec = df_renta.set_index("CUSEC").to_dict("index")
+
     nombre_mun_por_codigo = {}
     for territorio in df_renta["Territorio"].astype(str):
         cod_mun = territorio[:5]
-        if cod_mun in nombre_mun_por_codigo:
-            continue
-        resto = territorio[10:].strip()
-        match_secc = re.search(r"\s+sección\s+.*$", resto, re.IGNORECASE)
-        match_dist = re.search(r"\s+distrito\s+.*$", resto, re.IGNORECASE)
-        corte = min([m.start() for m in (match_secc, match_dist) if m], default=None)
-        nombre_mun_por_codigo[cod_mun] = resto[:corte].strip() if corte is not None else resto
+        if cod_mun not in nombre_mun_por_codigo:
+            resto = territorio[10:].strip()
+            match_secc = re.search(r"\s+(sección|distrito)\s+.*$", resto, re.IGNORECASE)
+            corte = match_secc.start() if match_secc else None
+            nombre_mun_por_codigo[cod_mun] = resto[:corte].strip() if corte else resto
 
-    # Reparto ponderado de la renta por CP
-    #    peso = nº de tramos de esa sección que caen en ese CP
-    #    Se excluyen del numerador Y del denominador las secciones sin dato
-    #    de renta (secreto estadístico), para no deflactar la media.
-    print("4. Repartiendo la renta de cada sección entre los CP según sus tramos...")
-    suma_ponderada_neta = defaultdict(float)
-    suma_ponderada_bruta = defaultdict(float)
-    peso_total_neta = defaultdict(float)
-    peso_total_bruta = defaultdict(float)
+    print("4. Ponderando renta del hogar y evolución por CP...")
+    suma_neta_act, suma_bruta_act = defaultdict(float), defaultdict(float)
+    suma_neta_ant, suma_bruta_ant = defaultdict(float), defaultdict(float)
+    peso_neta_act, peso_bruta_act = defaultdict(float), defaultdict(float)
+    peso_neta_ant, peso_bruta_ant = defaultdict(float), defaultdict(float)
     secciones_por_cp = defaultdict(set)
 
-    secciones_sin_renta = 0
     for cusec, cp_counts in cusec_cp_tramos.items():
         renta = renta_por_cusec.get(cusec)
-        if renta is None:
-            secciones_sin_renta += 1
+        if not renta:
             continue
-        r_neta, r_bruta = renta["Renta_Neta"], renta["Renta_Bruta"]
+        
+        r_neta = renta.get("Renta_Neta_Hogar")
+        r_bruta = renta.get("Renta_Bruta_Hogar")
+        r_neta_ant = renta.get("Renta_Neta_Hogar_Ant")
+        r_bruta_ant = renta.get("Renta_Bruta_Hogar_Ant")
+
         for cp, peso in cp_counts.items():
             secciones_por_cp[cp].add(cusec)
             if pd.notna(r_neta):
-                suma_ponderada_neta[cp] += peso * r_neta
-                peso_total_neta[cp] += peso
-            if pd.notna(r_bruta):
-                suma_ponderada_bruta[cp] += peso * r_bruta
-                peso_total_bruta[cp] += peso
+                suma_neta_act[cp] += peso * r_neta
+                peso_neta_act[cp] += peso
+            if pd.notna(r_neta_ant):
+                suma_neta_ant[cp] += peso * r_neta_ant
+                peso_neta_ant[cp] += peso
 
-    # Tabla final por Código Postal
-    print("5. Construyendo tabla final...")
+            if pd.notna(r_bruta):
+                suma_bruta_act[cp] += peso * r_bruta
+                peso_bruta_act[cp] += peso
+            if pd.notna(r_bruta_ant):
+                suma_bruta_ant[cp] += peso * r_bruta_ant
+                peso_bruta_ant[cp] += peso
+
+    print("5. Construyendo informe final...")
     filas = []
     for cp, total_tramos in total_tramos_cp.items():
-        peso_neta = peso_total_neta.get(cp, 0)
-        peso_bruta = peso_total_bruta.get(cp, 0)
-        renta_neta_media = (suma_ponderada_neta[cp] / peso_neta) if peso_neta > 0 else None
-        renta_bruta_media = (suma_ponderada_bruta[cp] / peso_bruta) if peso_bruta > 0 else None
+        pn_act = peso_neta_act.get(cp, 0)
+        pn_ant = peso_neta_ant.get(cp, 0)
+        pb_act = peso_bruta_act.get(cp, 0)
+        pb_ant = peso_bruta_ant.get(cp, 0)
+
+        rn_act = (suma_neta_act[cp] / pn_act) if pn_act > 0 else None
+        rn_ant = (suma_neta_ant[cp] / pn_ant) if pn_ant > 0 else None
+        rb_act = (suma_bruta_act[cp] / pb_act) if pb_act > 0 else None
+        rb_ant = (suma_bruta_ant[cp] / pb_ant) if pb_ant > 0 else None
+
+        evo_neta = (((rn_act - rn_ant) / rn_ant) * 100) if (rn_act is not None and rn_ant is not None and rn_ant != 0) else None
+        evo_bruta = (((rb_act - rb_ant) / rb_ant) * 100) if (rb_act is not None and rb_ant is not None and rb_ant != 0) else None
+
         n_urba = urba_tramos_cp.get(cp, 0)
         pct_urba = (n_urba / total_tramos * 100) if total_tramos else 0
-        cobertura = (peso_bruta / total_tramos * 100) if total_tramos else 0
+        cobertura = (pb_act / total_tramos * 100) if total_tramos else 0
 
-        # Municipio principal (el que más tramos aporta a este CP) + resto si lo comparte
         reparto_mun = sorted(mun_tramos_cp.get(cp, {}).items(), key=lambda kv: kv[1], reverse=True)
         codigo_ine_principal = reparto_mun[0][0] if reparto_mun else None
         municipio_principal = nombre_mun_por_codigo.get(codigo_ine_principal, "?") if reparto_mun else "?"
-        otros_municipios = ", ".join(
-            f"{nombre_mun_por_codigo.get(cod, cod)} ({tramos})"
-            for cod, tramos in reparto_mun[1:]
-        ) if len(reparto_mun) > 1 else ""
 
         filas.append({
             "Codigo_Postal": cp,
             "Municipio": municipio_principal,
             "Codigo_INE_Principal": codigo_ine_principal,
-            "Otros_Municipios_en_este_CP": otros_municipios,
-            "Renta_Neta_Media": round(renta_neta_media, 2) if renta_neta_media is not None else None,
-            "Renta_Bruta_Media": round(renta_bruta_media, 2) if renta_bruta_media is not None else None,
+            "Renta_Bruta_Hogar_Media": round(rb_act, 2) if rb_act else None,
+            "Evolución_Bruta_%": round(evo_bruta, 2) if evo_bruta is not None else None,
+            "Renta_Neta_Hogar_Media": round(rn_act, 2) if rn_act else None,
+            "Evolución_Neta_%": round(evo_neta, 2) if evo_neta is not None else None,
             "Pct_Urbanizaciones": round(pct_urba, 2),
             "Nº_Tramos_Urbanizacion": n_urba,
             "Pct_Cobertura_Renta": round(cobertura, 2),
             "Secciones_Consideradas": len(secciones_por_cp.get(cp, [])),
             "Tramos_Totales": total_tramos,
+            "Fiabilidad_Renta": "Baja (<50% cobertura)" if cobertura < 50 else "OK"
         })
 
     df_final = pd.DataFrame(filas)
     df_final["Codigo_Postal"] = df_final["Codigo_Postal"].astype(str).str.zfill(5)
+    df_final = df_final.sort_values(["Renta_Bruta_Hogar_Media", "Nº_Tramos_Urbanizacion"], ascending=[False, False])
 
-    # Aviso de fiabilidad: si menos del 50% de los tramos del CP tienen renta
-    # real (resto es secreto estadístico), la media puede no ser representativa.
-    df_final["Fiabilidad_Renta"] = df_final["Pct_Cobertura_Renta"].apply(
-        lambda p: "Baja (<50% cobertura)" if p < 50 else "OK"
-    )
-
-    # Orden pensado para targeting: primero por renta (de más a menos),
-    # y dentro de la misma renta, por volumen de tramos de urbanización.
-    df_final = df_final.sort_values(
-        ["Renta_Bruta_Media", "Nº_Tramos_Urbanizacion"], ascending=[False, False]
-    )
-
-    print(f"6. Guardando '{SALIDA.name}'...")
     df_final.to_excel(SALIDA, index=False, sheet_name="Renta_y_Urba_por_CP")
-
-    print("\nCompletado.")
-    print(f"  CP procesados        : {len(df_final)}")
-    print(f"  Secciones sin renta  : {secciones_sin_renta} (secreto estadístico / no publicado)")
-    print(f"  Fichero de salida    : {SALIDA}")
+    print(f"Informe guardado en {SALIDA.name}")
 
 
 if __name__ == "__main__":
