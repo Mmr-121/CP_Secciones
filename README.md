@@ -1,7 +1,5 @@
 # CP_Secciones
 
-readme_content = """# Pipeline de Análisis de Renta y Urbanizaciones por Código Postal (Alicante)
-
 Este proyecto proporciona un pipeline automatizado en Python para procesar, agrupar y analizar datos socioeconómicos y urbanísticos de la provincia de Alicante (Código INE `03`) a nivel de **Código Postal (CP)**. 
 
 A partir de los microdatos oficiales del **Instituto Nacional de Estadística (INE)** (secciones censales, tramos de vía y datos de renta por hogar), el sistema calcula promedios ponderados de renta, tasas de evolución interanual, porcentaje de edificación tipo urbanización y niveles de fiabilidad estadística, volcando finalmente los resultados en un ranking profesional listo para decisiones de segmentación, marketing (SEO/Ads) e inversión.
