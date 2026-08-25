@@ -55,10 +55,12 @@ def encontrar_excel_renta() -> Path:
     candidatos = sorted(glob.glob(str(BASE_DIR / "*.xlsx")))
     candidatos = [
         c for c in candidatos
-        if "Informe_Renta" not in c and "Relacion_Secciones" not in c
+        if "Informe_Renta" not in c and "Relacion_Secciones" not in c and "Plantilla" not in c
     ]
     if not candidatos:
         raise FileNotFoundError(f"No se encontró el Excel de renta del INE en {BASE_DIR}")
+    if len(candidatos) > 1:
+        raise ValueError(f"Hay más de un Excel candidato a renta del INE en {BASE_DIR}: {candidatos}")
     return Path(candidatos[0])
 
 
@@ -84,7 +86,6 @@ def main():
         for cusec, cp_counts in cusec_cp_tramos.items()
     }
 
-    # Excel del INE:solo la columna "Territorio", para sacar el nombre de municipio/sección de cada CUSEC.
     print(f"2. Leyendo nombres de municipios y secciones ({archivo_nombres.name})...")
     df_bruto = pd.read_excel(archivo_nombres, header=None)
 
@@ -99,7 +100,7 @@ def main():
     df_nombres = df_bruto.iloc[fila_cabecera + 2:, [0]].copy()
     df_nombres.columns = ["Territorio"]
     df_nombres["CUSEC"] = df_nombres["Territorio"].astype(str).str.extract(r"^(\d{10})")
-    df_secc = df_nombres.dropna(subset=["CUSEC"]).copy()
+    df_nombres = df_nombres.dropna(subset=["CUSEC"]).copy()
 
     def extraer_campos(texto):
         cod_mun = texto[:5]
@@ -108,16 +109,29 @@ def main():
         nombre_mun = resto[: match_secc.start()].strip() if match_secc else resto
         return pd.Series([cod_mun, nombre_mun])
 
-    df_secc[["codigo_ine_municipio", "nombre_municipio"]] = df_secc["Territorio"].apply(extraer_campos)
+    df_nombres[["codigo_ine_municipio", "nombre_municipio"]] = df_nombres["Territorio"].apply(extraer_campos)
+    nombre_municipio_por_codigo = dict(
+        df_nombres.drop_duplicates("codigo_ine_municipio")[["codigo_ine_municipio", "nombre_municipio"]].values
+    )
 
     # Cruce y exportación
     print("3. Cruzando secciones con su CP mayoritario...")
+    df_secc = pd.DataFrame({"CUSEC": list(cp_mayoritario_por_cusec.keys())})
     df_secc["Codigo_Postal"] = df_secc["CUSEC"].map(cp_mayoritario_por_cusec)
-    df_secc = df_secc.dropna(subset=["Codigo_Postal"])
+    df_secc["codigo_ine_municipio"] = df_secc["CUSEC"].str[:5]
+    df_secc["nombre_municipio"] = df_secc["codigo_ine_municipio"].map(nombre_municipio_por_codigo).fillna("?")
+
+    df_secc["codigo_distrito"] = df_secc["CUSEC"].str.zfill(10).str[5:7]
+    df_secc["codigo_seccion"] = df_secc["CUSEC"].str.zfill(10).str[7:10]
+    df_secc["Territorio"] = (
+        df_secc["CUSEC"] + " " + df_secc["nombre_municipio"] + " sección " + df_secc["codigo_seccion"]
+    )
 
     df_exportar = df_secc[[
         "nombre_municipio",
         "codigo_ine_municipio",
+        "codigo_distrito",
+        "codigo_seccion",
         "CUSEC",
         "Territorio",
         "Codigo_Postal",

@@ -29,10 +29,11 @@ Para ejecutar el pipeline correctamente, asegúrate de situar en la raíz del pr
 
 1. Directorio de Datos del INE (caj_esp_*):
 
-    Extraído de los microdatos del Callejero/Tramos del INE - (https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390).
+    Extraído de los microdatos del Callejero del Censo Electoral del INE - (https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390).
 
-        - VIAS*: Fichero de catálogo de vías.
-        - TRAM*: Fichero de tramos de vía con CUSEC y Código Postal.
+        - VIAS_*: Fichero de catálogo de vías (necesario).
+        - TRAM_*: Fichero de tramos de vía con CUSEC y Código Postal (necesario).
+        - SECC_*, PSEU_*, UP_*: vienen en la misma descarga del INE pero el pipeline actual NO los usa. SECC es útil para comprobar a mano la cobertura (cuántas secciones censales oficiales quedan fuera del cruce), pero no hace falta para ejecutar el pipeline.
 
 2. Excel de Renta del INE (30833.xlsx o similar): https://www.ine.es/dynt3/inebase/es/index.htm?padre=12385&capsel=5685
 
@@ -51,8 +52,16 @@ Revisa los logs en la terminal. Al finalizar, la plantilla Excel se habrá actua
 ---
 ## Archivos Generados
 
-Relacion_Secciones_CP.xlsx: Tabla de equivalencia entre Secciones Censales (10 dígitos), Municipios y Códigos Postales.
+Relacion_Secciones_CP.xlsx: Tabla de equivalencia entre Secciones Censales (10 dígitos, con municipio/distrito/sección desglosados) y Códigos Postales.
 
 Informe_Renta_Urbanizacion_por_CP.xlsx: Informe de trabajo detallado con métricas numéricas agregadas por CP.
 
 Plantilla_Profesional_IPJ_Alicante.xlsx: Documento final listo para presentación y análisis estratégico.
+
+---
+## Limitaciones conocidas
+
+- **Asignación de renta por CP "mayoritario":** el INE publica renta por sección censal, no por código postal, y no existe una tabla oficial de traducción gratuita entre ambos. Cuando una sección tiene calles repartidas entre varios CP, toda su renta se asigna al CP con más tramos de calle. Con la edición de datos usada al validar este pipeline: ~12% de las secciones tienen tramos en más de un CP, y ~4% de los tramos totales de la provincia quedan en la parte "minoritaria" de su sección (pureza media 97,6%). Es una muy buena aproximación para segmentación de marketing (Google Ads ya trabaja con un nivel de precisión de CP similar), pero no una asignación exacta al 100%.
+- **% de urbanizaciones:** depende de que el Callejero del INE clasifique bien el tipo de vía (`URB`/`URBAT` sobre el resto de tipos). El cálculo en sí está verificado contra los ficheros reales, pero la calidad de esa clasificación es responsabilidad del INE, no del pipeline.
+- **Secreto estadístico:** algunas secciones censales muy pequeñas no tienen renta publicada por el INE (protección de privacidad). El cruce sección→CP no depende del Excel de renta y sí las incluye; el CP resultante puede tener menos cobertura de renta de la que le correspondería. Los CP con menos del 50% de cobertura de renta se marcan como "Fiabilidad_Renta: Baja" y se anotan en la columna Observaciones de `Ranking_CP`.
+- **Orden de `Ranking_CP`:** actualmente ordena solo por renta bruta descendente. Combinar renta y % de urbanizaciones (u otras métricas como Habitantes, % Unifamiliares o Competencia) en un único criterio de prioridad queda pendiente de definir con más datos.

@@ -52,10 +52,12 @@ def encontrar_excel_renta() -> Path:
     candidatos = sorted(glob.glob(str(BASE_DIR / "*.xlsx")))
     candidatos = [
         c for c in candidatos
-        if "Informe_Renta" not in c and "Relacion_Secciones" not in c
+        if "Informe_Renta" not in c and "Relacion_Secciones" not in c and "Plantilla" not in c
     ]
     if not candidatos:
         raise FileNotFoundError(f"No se encontró el Excel de renta del INE en {BASE_DIR}")
+    if len(candidatos) > 1:
+        raise ValueError(f"Hay más de un Excel candidato a renta del INE en {BASE_DIR}: {candidatos}")
     return Path(candidatos[0])
 
 
@@ -72,13 +74,7 @@ def main():
                 continue
             mun = linea[0:5]
             vcode = linea[5:10]
-            idx = linea.find("20260630")
-            if idx == -1:
-                m = re.search(r"\d{8}", linea)
-                if not m:
-                    continue
-                idx = m.start()
-            tipo = linea[idx + 14: idx + 19].strip()
+            tipo = linea[52:57].strip()
             tipo_via_dict[(mun, vcode)] = tipo
 
     print("2. Leyendo TRAM...")
@@ -117,7 +113,7 @@ def main():
     if fila_cabecera == -1:
         raise ValueError("No se encontró la cabecera de renta en el Excel del INE.")
 
-    # NUEVO: Propagamos los nombres de las celdas combinadas hacia la derecha (forward fill)
+    # Propagamos los nombres de las celdas combinadas hacia la derecha (forward fill)
     row_indicadores = df_bruto.iloc[fila_cabecera].ffill().astype(str).str.lower()
     
     # Identificar las posiciones de Renta Neta y Bruta por Hogar (devuelve todas las columnas, una por año)
@@ -225,9 +221,9 @@ def main():
             "Codigo_Postal": cp,
             "Municipio": municipio_principal,
             "Codigo_INE_Principal": codigo_ine_principal,
-            "Renta_Bruta_Hogar_Media": round(rb_act, 2) if rb_act else None,
+            "Renta_Bruta_Hogar_Media": round(rb_act, 2) if rb_act is not None else None,
             "Evolución_Bruta_%": round(evo_bruta, 2) if evo_bruta is not None else None,
-            "Renta_Neta_Hogar_Media": round(rn_act, 2) if rn_act else None,
+            "Renta_Neta_Hogar_Media": round(rn_act, 2) if rn_act is not None else None,
             "Evolución_Neta_%": round(evo_neta, 2) if evo_neta is not None else None,
             "Pct_Urbanizaciones": round(pct_urba, 2),
             "Nº_Tramos_Urbanizacion": n_urba,

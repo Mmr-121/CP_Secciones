@@ -44,7 +44,7 @@ def ejecutar(script_name: str) -> None:
     )
 
     if resultado.returncode != 0:
-        print(f"\n[ERROR] {script_name} terminó con código {resultado.returncode}.")
+        print(f"\nERROR: {script_name} terminó con código {resultado.returncode}.")
         print("Se detiene el pipeline para que puedas revisar el problema.")
         sys.exit(resultado.returncode)
 
