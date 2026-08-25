@@ -1,3 +1,4 @@
 caj_esp_072026/
 *.zip
 *.xlsx
+.venv/

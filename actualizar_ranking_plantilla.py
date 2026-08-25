@@ -21,9 +21,10 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent / "datos/entrada"
+BASE_DIR_SALIDA = Path(__file__).resolve().parent.parent / "datos/salida"
 
-INFORME = BASE_DIR / "Informe_Renta_Urbanizacion_por_CP.xlsx"
+INFORME = BASE_DIR_SALIDA / "Informe_Renta_Urbanizacion_por_CP.xlsx"
 PLANTILLA = BASE_DIR / "Plantilla_Profesional_IPJ_Alicante.xlsx"
 HOJA = "Ranking_CP"
 

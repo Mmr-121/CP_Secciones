@@ -17,7 +17,8 @@ import pandas as pd
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 # RUTAS DE LOS ARCHIVOS
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent / "datos/entrada"
+BASE_DIR_SALIDA = Path(__file__).resolve().parent.parent / "datos/salida"
 
 
 def _localizar_carpeta_datos() -> Path:
@@ -36,7 +37,7 @@ def _localizar_carpeta_datos() -> Path:
 
 FOLDER_DATOS = _localizar_carpeta_datos()
 
-SALIDA = BASE_DIR / "Relacion_Secciones_CP.xlsx"
+SALIDA = BASE_DIR_SALIDA / "Relacion_Secciones_CP.xlsx"
 
 PROVINCIA = "03"  # Alicante
 

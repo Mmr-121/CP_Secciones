@@ -18,7 +18,8 @@ import pandas as pd
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent / "datos/entrada"
+BASE_DIR_SALIDA = Path(__file__).resolve().parent.parent / "datos/salida"
 
 
 def _localizar_carpeta_datos() -> Path:
@@ -37,7 +38,7 @@ FOLDER_DATOS = _localizar_carpeta_datos()
 PROVINCIA = "03"  # Alicante
 TIPOS_VIA_URBANIZACION = {"URB", "URBAT"}
 
-SALIDA = BASE_DIR / "Informe_Renta_Urbanizacion_por_CP.xlsx"
+SALIDA = BASE_DIR_SALIDA / "Informe_Renta_Urbanizacion_por_CP.xlsx"
 
 
 def encontrar_fichero(patron: str) -> Path:
